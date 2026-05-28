@@ -53,7 +53,6 @@ export default function ColonBlockPlugin(md: MarkdownIt): void {
   md.renderer.rules.colon_block_open = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const tagName = token.tag || 'div';
-    console.log('token.attrs', token.attrs);
 
     const attrsStr = self.renderAttrs(token);
     return `<${tagName}${attrsStr}>`;
