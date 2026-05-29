@@ -5,12 +5,30 @@ import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 const MARKER_CHAR = 0x2d; // '-'
 const MIN_MARKER_LEN = 3;
 
+export interface SectionBlockPluginOptions {
+  /** セクションの通し番号 (data-section-number) を付与するかどうか */
+  add_data_section_number?: boolean;
+  /** 連番IDのプレフィックス (string: 任意の文字列, true: 'section-', false/null: 付与しない) */
+  add_section_id?: string | boolean | null;
+  /** セクションに一括付与するクラス名の配列 */
+  add_classes?: string[] | false;
+  /** 通し番号の開始インデックス */
+  number_start?: number;
+}
+
 /**
  * Markdown-it plugin that wraps content blocks separated by `---` (thematic breaks) into `<section>` elements.
  * It automatically opens a section at the beginning of the document and closes the final section at the end.
- * * @param md - The MarkdownIt parser instance.
  */
-export default function SectionBlockPlugin(md: MarkdownIt): void {
+export default function SectionBlockPlugin(md: MarkdownIt, options?: SectionBlockPluginOptions): void {
+  // デフォルト値のマージ (null や false を維持するため undefined のみチェック)
+  const opts: Required<SectionBlockPluginOptions> = {
+    add_data_section_number: options?.add_data_section_number ?? false,
+    add_section_id: options?.add_section_id !== undefined ? options.add_section_id : true,
+    add_classes: options?.add_classes ?? false,
+    number_start: options?.number_start ?? 1,
+  };
+
   // Inject the section block ruler before the standard 'hr' (thematic break) rule
   md.block.ruler.before('hr', 'section_block', sectionBlockRule);
 
@@ -18,8 +36,13 @@ export default function SectionBlockPlugin(md: MarkdownIt): void {
   md.core.ruler.push('section_wrap_open', sectionWrapOpenCoreRule);
   md.core.ruler.push('section_wrap_close', sectionWrapCloseCoreRule);
 
-  // Renderer definitions for section tokens
-  md.renderer.rules.section_open = () => '<section>\n';
+  // Core rule to dynamically apply attributes to all section_open tokens
+  md.core.ruler.push('section_apply_attrs', createSectionApplyAttrsCoreRule(opts));
+
+  // Renderer definitions for section tokens using renderAttrs
+  md.renderer.rules.section_open = (tokens, idx, _options, _env, self) => {
+    return `<section${self.renderAttrs(tokens[idx])}>\n`;
+  };
   md.renderer.rules.section_close = () => '</section>\n';
 }
 
@@ -47,6 +70,44 @@ function sectionWrapCloseCoreRule(state: StateCore): void {
 
   // Append to the very end of the document
   state.tokens.push(token_c);
+}
+
+/**
+ * Factory to create a core rule that applies configuration-based attributes to all section_open tokens.
+ */
+function createSectionApplyAttrsCoreRule(opts: Required<SectionBlockPluginOptions>) {
+  return function sectionApplyAttrsCoreRule(state: StateCore): void {
+    if (state.tokens.length === 0) return;
+
+    let currentNumber = opts.number_start;
+
+    for (let i = 0; i < state.tokens.length; i++) {
+      const token = state.tokens[i];
+      if (token.type !== 'section_open') continue;
+
+      token.attrs = token.attrs || [];
+
+      // 1. IDの付与 (出力HTMLの綺麗さのため、最初に追加して先頭に並ぶようにする)
+      if (opts.add_section_id !== false && opts.add_section_id !== null) {
+        const prefix = typeof opts.add_section_id === 'string' ? opts.add_section_id : 'section';
+        token.attrSet('id', `${prefix}-${currentNumber}`);
+      }
+
+      // 2. クラスの付与
+      if (opts.add_classes && opts.add_classes.length > 0) {
+        opts.add_classes.forEach((cls) => {
+          token.attrJoin('class', cls);
+        });
+      }
+
+      // 3. 通し番号 (data-section-number) の付与
+      if (opts.add_data_section_number) {
+        token.attrSet('data-section-number', String(currentNumber));
+      }
+
+      currentNumber++;
+    }
+  };
 }
 
 function sectionBlockRule(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
