@@ -1,0 +1,10 @@
+{
+  "name": "markdown-it-hr-section",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target node"
+  }
+}
